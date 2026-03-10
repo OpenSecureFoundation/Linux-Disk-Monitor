@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load static %}
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diskmonitor plateforme</title>
+    <link rel="shortcut icon" href="https://cdn-icons-png.flaticon.com/512/2910/2910763.png">
+    <link rel="stylesheet" href="{% static 'monitoring/template2/assets/css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'monitoring/template2/assets/plugins/fontawesome/css/all.min.css' %}">
+    <link rel="stylesheet" href="{% static 'monitoring/template2/assets/css/style.css' %}">
+</head>
+<body class="nk-body bg-lighter npc-default has-sidebar no-touch nk-nio-theme">
+<div class="main-wrapper">
+
+    <!-- HEADER -->
+    <div class="header header-one">
+        <div class="header-left header-left-one">
+            <a href="{% url 'home' %}" class="logo">
+                <img src="https://cdn-icons-png.flaticon.com/512/2910/2910763.png" alt="Disque" width="40">
+            </a>
+        </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-inner slimscroll">
+            <div id="sidebar-menu" class="sidebar-menu">
+                <ul>
+                    <li class="menu-title"><span>Main</span></li>
+                    <li class="active"><a href="#"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li>
+                        <a href="#"><i class="fas fa-database"></i> Disques</a>
+                        <ul id="disks-list" style="display:block;">
+                            {% for disk in disks %}
+                                <li>
+                                    <a href="javascript:void(0);" onclick="selectDisk('{{ disk.name }}')">
+                                        {{ disk.name }} - {{ disk.size }}
+                                    </a>
+                                </li>
+                            {% empty %}
+                                <li>Aucun disque détecté</li>
+                            {% endfor %}
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTENU -->
+    <div class="page-wrapper">
+        <div class="content container-fluid">
+            <div class="row">
+                <!-- Carte Disque -->
+                <div class="col-xl-3 col-sm-6 col-12">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="dash-widget-header">
+                                <div class="dash-count">
+                                    <div class="dash-title">
+                                        <i class="fas fa-hdd"></i>
+                                        <span id="selected-disk">Sélectionnez un disque</span>
+                                    </div>
+                                    <div id="disk-info" class="mt-2 text-muted" style="font-size:13px;"></div>
+                                    <p class="text-muted mt-3 mb-0 d-flex gap-3">
+                                        <span class="text-success" style="cursor:pointer;" onclick="startDisk()">Démarrer</span>
+                                        <span class="text-danger" style="cursor:pointer;" onclick="stopDisk()">Arrêter</span>
+                                        <span class="text-primary" style="cursor:pointer;" onclick="viewDisk()">Visualiser</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="col-xl-9 col-12">
+                    <div class="card mb-3">
+                        <div class="card-header"><h5>I/O en temps réel</h5></div>
+                        <div class="card-body"><canvas id="ioChart" height="110"></canvas></div>
+                    </div>
+                    <div class="card mb-3">
+                        <div class="card-header"><h5>Occupation disque (%)</h5></div>
+                        <div class="card-body"><canvas id="usageChart" height="110"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header"><h5>Latence (estimation)</h5></div>
+                        <div class="card-body"><canvas id="latencyChart" height="110"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fichiers ouverts -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header"><h5>Fichiers ouverts / créés (max 15)</h5></div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Fichier</th>
+                                            <th>Taille (KB)</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="files-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="{% static 'monitoring/template2/assets/js/jquery-3.6.0.min.js' %}"></script>
+<script src="{% static 'monitoring/template2/assets/js/bootstrap.bundle.min.js' %}"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{{ disks|json_script:"disks-data" }}
+
+<script>
+let currentDisk = null;
+let ioChart = null;
+let usageChart = null;
+let latencyChart = null;
+let intervalId = null;
+
+const disksData = JSON.parse(document.getElementById("disks-data").textContent);
+
+function selectDisk(name){
+    const disk = disksData.find(d => d.name === name);
+    if(!disk) return;
+
+    currentDisk = name;
+    document.getElementById("selected-disk").innerHTML = `<strong>${disk.name}</strong>`;
+
+    fetch(`/disk/usage/${name}/`).then(r=>r.json()).then(info=>{
+        document.getElementById("disk-info").innerHTML =
+        `Total : ${info.total} — Utilisé : ${info.used}<br>
+         Libre : ${info.free} — <strong>${info.percent}% utilisé</strong>`;
+    });
+
+    resetCharts();
+}
+
+function resetCharts(){
+    if(ioChart){ ioChart.data.labels=[]; ioChart.data.datasets.forEach(ds=>ds.data=[]); ioChart.update(); }
+    if(usageChart){ usageChart.data.labels=[]; usageChart.data.datasets[0].data=[]; usageChart.update(); }
+    if(latencyChart){ latencyChart.data.labels=[]; latencyChart.data.datasets[0].data=[]; latencyChart.update(); }
+}
+
+function startDisk(){ 
+    if(!currentDisk) return alert("Sélectionnez d'abord un disque !");
+    fetch(`/disk/start/${currentDisk}/`).then(r=>r.json()).then(d=>alert(d.message)); 
+}
+
+function stopDisk(){ 
+    if(!currentDisk) return alert("Sélectionnez d'abord un disque !");
+    fetch(`/disk/stop/${currentDisk}/`).then(r=>r.json()).then(d=>alert(d.message)); 
+    clearInterval(intervalId); 
+    intervalId=null; 
+}
+
+function viewDisk(){
+    if(!currentDisk) return alert("Sélectionnez un disque !");
+    if(intervalId) clearInterval(intervalId);
+
+    function createChart(id,label){
+        return new Chart(document.getElementById(id), {
+            type:'line',
+            data:{labels:[], datasets:[{label:label,data:[],borderColor:'blue',borderWidth:2,fill:false}]},
+            options:{animation:false,scales:{y:{beginAtZero:true}}}
+        });
+    }
+
+    if(!ioChart) ioChart=createChart("ioChart","I/O KB/s");
+    if(!usageChart) usageChart=createChart("usageChart","Occupation (%)");
+    if(!latencyChart) latencyChart=createChart("latencyChart","Latence (ms)");
+
+    intervalId = setInterval(async ()=>{
+        // fichiers ouverts
+        const f = await fetch(`/disk/files/${currentDisk}/`);
+        const dataFiles = await f.json();
+        const tbody = document.getElementById("files-tbody");
+        tbody.innerHTML = "";
+        dataFiles.files.forEach((f,idx)=>{
+            tbody.innerHTML+=`
+            <tr>
+                <td>${idx+1}</td>
+                <td>${f.path}</td>
+                <td>${f.size_kb}</td>
+                <td>${f.action}</td>
+            </tr>`;
+        });
+
+        const time = new Date().toLocaleTimeString();
+
+        // Stats I/O
+        const s = await fetch(`/disk/stats/${currentDisk}/`);
+        const io = await s.json();
+        ioChart.data.labels.push(time);
+        ioChart.data.datasets[0].data.push(io.read_kb + io.write_kb);
+
+        // Occupation disque
+        const u = await fetch(`/disk/usage/${currentDisk}/`);
+        const usage = await u.json();
+        usageChart.data.labels.push(time);
+        usageChart.data.datasets[0].data.push(usage.percent);
+
+        // Latence simulée
+        const latency = (Math.random()*5 + io.read_kb/50).toFixed(2);
+        latencyChart.data.labels.push(time);
+        latencyChart.data.datasets[0].data.push(latency);
+
+        [ioChart,usageChart,latencyChart].forEach(c=>{
+            if(c.data.labels.length>20){
+                c.data.labels.shift();
+                c.data.datasets[0].data.shift();
+            }
+            c.update();
+        });
+
+    },1000);
+}
+</script>
+</body>
+</html>
