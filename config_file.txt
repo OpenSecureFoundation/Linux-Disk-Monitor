@@ -1,0 +1,2 @@
+Ce fichier est relatif a la configuration et au deploiement du project disk-monitor dans les environnements CentOs Stream
+
